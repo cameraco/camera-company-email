@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Company Email</title>
+<!-- v1 -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { max-width: 100vw; overflow-x: hidden; }
+
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text: #1a202c;
+    --text-muted: #718096;
+    --primary: #0096d7;
+    --primary-hover: #007ab5;
+    --primary-light: #e0f4fc;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .status { font-size: 13px; color: var(--text-muted); margin-right: 12px; }
+  header .row { display: flex; align-items: center; }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 14px;
+  }
+  button.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--primary-hover); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 8px; }
+  .card p { color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+
+  .locked {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .stat {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .stat .value { font-size: 22px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--primary-hover);
+    font-weight: 600;
+  }
+
+  pre.log {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Camera Company Email <span class="badge">v1 foundation</span></h1>
+  <div class="row">
+    <span class="status" id="authStatus">Sign in to load your access.</span>
+    <button id="authButton">Sign in</button>
+  </div>
+</header>
+
+<main id="app">
+  <div class="locked" id="lockedPanel">
+    Sign in with your Camera Company Hub username to continue.
+  </div>
+
+  <div id="unlockedPanel" style="display:none;">
+    <div class="card">
+      <h2>Counterpoint data sync</h2>
+      <p>Pulls <code>customers.csv</code> and <code>sales_export.csv</code> from Dropbox through the
+      same pipeline as the Reports app, so we can confirm data access is wired up correctly before
+      building segments and campaigns on top of it.</p>
+      <div class="row" style="margin-top:14px; gap:10px;">
+        <button class="primary" id="syncButton">Sync from Dropbox</button>
+      </div>
+      <div class="stat-grid" id="statGrid" style="display:none;">
+        <div class="stat"><div class="value" id="statCustomers">–</div><div class="label">Customer rows</div></div>
+        <div class="stat"><div class="value" id="statSales">–</div><div class="label">Sales export rows</div></div>
+      </div>
+      <pre class="log" id="syncLog" style="display:none; margin-top:14px;"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Coming next</h2>
+      <p>Subscribers, segments, templates, and campaigns are the next build phases &mdash; this
+      foundation just proves the Counterpoint &rarr; Dropbox &rarr; app data path works end to end.</p>
+    </div>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<script>
+  const accountsFirebaseConfig = {
+    apiKey: "AIzaSyAsEdd0RxNHNbE6qWQe380A73irH4bYdg0",
+    authDomain: "camera-company-accounts.firebaseapp.com",
+    projectId: "camera-company-accounts",
+    storageBucket: "camera-company-accounts.firebasestorage.app",
+    messagingSenderId: "189865235491",
+    appId: "1:189865235491:web:463e6a1ddf876c684ccd96",
+    measurementId: "G-JGQ4NFL54E"
+  };
+
+  const accountsApp = firebase.initializeApp(accountsFirebaseConfig, "cameraCompanyAccountsEmail");
+  const accountsAuth = accountsApp.auth();
+  const accountsDb = accountsApp.firestore();
+
+  const authButton = document.getElementById("authButton");
+  const authStatus = document.getElementById("authStatus");
+  const lockedPanel = document.getElementById("lockedPanel");
+  const unlockedPanel = document.getElementById("unlockedPanel");
+  const syncButton = document.getElementById("syncButton");
+  const syncLog = document.getElementById("syncLog");
+  const statGrid = document.getElementById("statGrid");
+  const statCustomers = document.getElementById("statCustomers");
+  const statSales = document.getElementById("statSales");
+
+  let accountUser = null;
+  let accountAuthToken = "";
+
+  function normalizeUsername(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  async function accountProfileByUsername(username) {
+    const key = normalizeUsername(username);
+    if (!key) return null;
+    const snap = await accountsDb.collection("accountUsers").doc(key).get();
+    return snap.exists ? { username: key, ...snap.data() } : null;
+  }
+
+  function applyAccess() {
+    const hasAccess = !!(accountUser && accountUser.emailAccess);
+    lockedPanel.style.display = hasAccess ? "none" : "block";
+    unlockedPanel.style.display = hasAccess ? "block" : "none";
+    if (accountUser && !hasAccess) {
+      lockedPanel.textContent = "Signed in as " + (accountUser.name || accountUser.username) +
+        ", but this account doesn't have Camera Company Email access yet. Ask Ward to enable it in the Hub.";
+    } else if (!accountUser) {
+      lockedPanel.textContent = "Sign in with your Camera Company Hub username to continue.";
+    }
+  }
+
+  accountsAuth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch((error) => {
+    console.warn("Could not set auth persistence:", error);
+  });
+
+  accountsAuth.onAuthStateChanged(async (firebaseUser) => {
+    if (!firebaseUser) {
+      accountUser = null;
+      accountAuthToken = "";
+      authButton.textContent = "Sign in";
+      authStatus.textContent = "Sign in to load your access.";
+      applyAccess();
+      return;
+    }
+    try {
+      const snap = await accountsDb.collection("accountUsers")
+        .where("email", "==", firebaseUser.email)
+        .limit(1)
+        .get();
+      if (snap.empty) {
+        await accountsAuth.signOut().catch(() => {});
+        authStatus.textContent = "This account is not on the Camera Company roster.";
+        applyAccess();
+        return;
+      }
+      const doc = snap.docs[0];
+      accountUser = { username: doc.id, ...doc.data() };
+      accountAuthToken = await firebaseUser.getIdToken();
+      authButton.textContent = "Sign out (" + accountUser.username + ")";
+      authStatus.textContent = "Signed in as " + (accountUser.name || accountUser.username) + ".";
+      applyAccess();
+    } catch (error) {
+      console.error(error);
+      authStatus.textContent = "Could not load account profile.";
+    }
+  });
+
+  authButton.addEventListener("click", async () => {
+    if (accountUser) {
+      await accountsAuth.signOut();
+      return;
+    }
+    const username = prompt("Username:");
+    if (username === null) return;
+    const profile = await accountProfileByUsername(username).catch(() => null);
+    if (!profile || !profile.email) {
+      alert("That username was not found, or has no login email set up yet. Ask Ward to add it in the Hub.");
+      return;
+    }
+    const password = prompt("Password:");
+    if (password === null) return;
+    try {
+      await accountsAuth.signInWithEmailAndPassword(profile.email, password);
+    } catch (error) {
+      alert("Sign-in failed: " + error.message);
+    }
+  });
+
+  function parseCsvRowCount(text) {
+    const lines = text.split(/\r\n|\n/).filter((line) => line.trim().length > 0);
+    return Math.max(0, lines.length - 1);
+  }
+
+  async function fetchExport(name) {
+    const response = await fetch("/.netlify/functions/dropbox-export?export=" + encodeURIComponent(name), {
+      headers: {
+        "X-CC-Auth-Token": accountAuthToken,
+        "X-CC-Username": accountUser ? accountUser.username : "",
+      },
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(text || ("Request failed with status " + response.status));
+    return text;
+  }
+
+  syncButton.addEventListener("click", async () => {
+    syncButton.disabled = true;
+    syncLog.style.display = "block";
+    syncLog.textContent = "Syncing…";
+    statGrid.style.display = "none";
+    try {
+      const [customersCsv, salesCsv] = await Promise.all([
+        fetchExport("customers"),
+        fetchExport("sales"),
+      ]);
+      statCustomers.textContent = parseCsvRowCount(customersCsv).toLocaleString();
+      statSales.textContent = parseCsvRowCount(salesCsv).toLocaleString();
+      statGrid.style.display = "grid";
+      syncLog.textContent = "Synced successfully at " + new Date().toLocaleTimeString() + ".";
+    } catch (error) {
+      syncLog.textContent = "Sync failed: " + error.message;
+    } finally {
+      syncButton.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
