@@ -289,6 +289,34 @@
   const accountsApp = firebase.initializeApp(accountsFirebaseConfig, "cameraCompanyAccountsEmail");
   const accountsAuth = accountsApp.auth();
   const accountsDb = accountsApp.firestore();
+  const FUNCTIONS_BASE = "https://us-central1-camera-company-accounts.cloudfunctions.net";
+
+  // Pre-login username -> email lookup can't read Firestore (accountUsers is
+  // only readable once signed in), so this mirrors the Reports/Hub apps'
+  // hardcoded roster fallback used for exactly this step.
+  const accountRoster = [
+    { username: "ward", name: "Ward", email: "ward@cameracompany.com" },
+    { username: "wendy", name: "Wendy", email: "wendy@cameracompany.com" },
+    { username: "jared", name: "Jared", email: "jared@mail.cameracompany.com" },
+    { username: "daniel", name: "Daniel", email: "henriksen.daniel@yahoo.com" },
+    { username: "brian", name: "Brian", email: "brimtlgtr@gmail.com" },
+    { username: "scott", name: "Scott", email: "scott@mail.cameracompany.com" },
+    { username: "ed", name: "Ed.", email: "egrindle@mail.cameracompany.com" },
+    { username: "sterling", name: "Sterling", email: "sterling.ruemmler@gmail.com" },
+    { username: "tim", name: "Tim", email: "tim@mail.cameracompany.com" },
+    { username: "cmm", name: "CMM", email: "caitlinmarymargarett@gmail.com" },
+    { username: "lisa", name: "Lisa", email: "uwlaws@gmail.com" },
+    { username: "charlie", name: "Charlie", email: "contact@charliekruschek.com" },
+    { username: "marlie", name: "Marlie", email: "marlie@mail.cameracompany.com" },
+    { username: "dom", name: "Dom", email: "mxlunab@gmail.com" },
+    { username: "anne", name: "Anne", email: "fefnir@gmail.com" },
+    { username: "edmund", name: "Edmund", email: "edmund@mail.cameracompany.com" },
+    { username: "ray", name: "Ray", email: "ray_waxham@yahoo.com" },
+    { username: "dave", name: "Dave", email: "whiskyzoobravo@gmail.com" },
+    { username: "steve", name: "Steve", email: "stevedaubs@mac.com" },
+    { username: "shiloh", name: "Shiloh", email: "shiloh.debauch@gmail.com" },
+    { username: "cody", name: "Cody Bender", email: "benderc.film@gmail.com" }
+  ];
 
   const authButton = document.getElementById("authButton");
   const authStatus = document.getElementById("authStatus");
@@ -302,6 +330,7 @@
 
   let accountUser = null;
   let accountAuthToken = "";
+  let handoffInProgress = false;
 
   function normalizeUsername(value) {
     return String(value || "").trim().toLowerCase();
@@ -312,6 +341,11 @@
     if (!key) return null;
     const snap = await accountsDb.collection("accountUsers").doc(key).get();
     return snap.exists ? { username: key, ...snap.data() } : null;
+  }
+
+  function rosterByUsername(username) {
+    const key = normalizeUsername(username);
+    return accountRoster.find((user) => user.username === key) || null;
   }
 
   function applyAccess() {
@@ -326,6 +360,40 @@
     }
   }
 
+  // Reads a one-time Hub ID token from ?cc_handoff=... (set by the "Email"
+  // link in the Hub sidebar), exchanges it for a custom token via
+  // mintSsoToken, and signs in for real - so opening this app from the Hub
+  // doesn't require typing a username/password here too.
+  async function consumeAccountHandoff() {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get("cc_handoff");
+    if (!raw) return;
+    params.delete("cc_handoff");
+    const cleanSearch = params.toString();
+    history.replaceState(null, "", location.pathname + (cleanSearch ? "?" + cleanSearch : ""));
+
+    const handoff = new URLSearchParams(raw);
+    const hubToken = handoff.get("cc_token");
+    if (!hubToken) return; // legacy (non-migrated) Hub login has no Firebase account to hand off
+
+    handoffInProgress = true;
+    authStatus.textContent = "Signing in from the Hub…";
+    try {
+      const response = await fetch(FUNCTIONS_BASE + "/mintSsoToken", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + hubToken },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not complete Hub sign-in");
+      await accountsAuth.signInWithCustomToken(data.token);
+    } catch (error) {
+      console.error("Hub handoff failed:", error);
+      authStatus.textContent = "Could not use the Hub sign-in. Please sign in here once.";
+    } finally {
+      handoffInProgress = false;
+    }
+  }
+
   accountsAuth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch((error) => {
     console.warn("Could not set auth persistence:", error);
   });
@@ -335,7 +403,7 @@
       accountUser = null;
       accountAuthToken = "";
       authButton.textContent = "Sign in";
-      authStatus.textContent = "Sign in to load your access.";
+      if (!handoffInProgress) authStatus.textContent = "Sign in to load your access.";
       applyAccess();
       return;
     }
@@ -362,6 +430,8 @@
     }
   });
 
+  consumeAccountHandoff();
+
   authButton.addEventListener("click", async () => {
     if (accountUser) {
       await accountsAuth.signOut();
@@ -369,15 +439,20 @@
     }
     const username = prompt("Username:");
     if (username === null) return;
-    const profile = await accountProfileByUsername(username).catch(() => null);
-    if (!profile || !profile.email) {
-      alert("That username was not found, or has no login email set up yet. Ask Ward to add it in the Hub.");
+    // accountUsers isn't readable before sign-in, so this'll normally come
+    // from the roster fallback - the Firestore attempt is just a bonus for
+    // usernames added after the roster array was last updated.
+    let profile = await accountProfileByUsername(username).catch(() => null);
+    profile = profile || rosterByUsername(username);
+    const signInEmail = profile && profile.email;
+    if (!signInEmail) {
+      alert("That username was not found. Ask Ward to add it in the Hub, or open this app from a link inside the Hub instead.");
       return;
     }
-    const password = prompt("Password:");
-    if (password === null) return;
+    const enteredPassword = prompt("Password:");
+    if (enteredPassword === null) return;
     try {
-      await accountsAuth.signInWithEmailAndPassword(profile.email, password);
+      await accountsAuth.signInWithEmailAndPassword(signInEmail, enteredPassword);
     } catch (error) {
       alert("Sign-in failed: " + error.message);
     }
@@ -434,8 +509,6 @@
   });
 
   // --- Cloud Functions helper ---
-  const FUNCTIONS_BASE = "https://us-central1-camera-company-accounts.cloudfunctions.net";
-
   async function callFn(name, { method = "GET", body } = {}) {
     const response = await fetch(FUNCTIONS_BASE + "/" + name, {
       method,
