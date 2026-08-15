@@ -6,8 +6,15 @@ the same Dropbox sync folder the other exports already use
 
 Verified against the real schema 2026-08-15: the customer table is `AR_CUST` (not `CM_CUST`),
 business name is `NAM` (not `CUST_NAM`), and there's no simple `NO_EMAIL` flag — instead there's
-an actual marketing opt-in field, `INCLUDE_IN_MARKETING_MAILOUTS` (confirmed `Y`/`N` values only,
-29,185 Y / 17,003 N among customers with an email on file).
+a marketing opt-in field, `INCLUDE_IN_MARKETING_MAILOUTS` (confirmed `Y`/`N` values only, 29,185 Y
+/ 17,003 N among customers with an email on file).
+
+**Important: this field is inverted from what its name suggests.** Despite being called
+"INCLUDE_IN_MARKETING_MAILOUTS", `Y` actually means the customer has the "Opt-out from marketing
+emails" box checked in Counterpoint's customer screen (i.e. excluded), and `N` means that box is
+unchecked (i.e. eligible). Confirmed against two real customer records on 2026-08-15: customer
+2023862520 (`N`, checkbox unchecked - eligible) and customer 2143598 (`Y`, checkbox checked -
+excluded). The query below accounts for this inversion.
 
 ## Query
 
@@ -18,7 +25,7 @@ SELECT
     c.NAM                                                                  AS [Business Name],
     c.EMAIL_ADRS_1                                                         AS [Email],
     COALESCE(NULLIF(c.MBL_PHONE_1, ''), c.PHONE_1)                         AS [Phone],
-    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 0 ELSE 1 END      AS [Do Not Email],
+    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 1 ELSE 0 END      AS [Do Not Email],
     c.LST_SAL_DAT                                                          AS [Last Sale Date]
 FROM AR_CUST c
 WHERE c.EMAIL_ADRS_1 IS NOT NULL
@@ -30,10 +37,11 @@ Notes / decisions baked into this:
 - **Company-wide, not just WEST location** — customer records aren't per-location like sales
   lines are, so this pulls every customer with an email on file regardless of which store they
   shop at. Let me know if that's not what you want.
-- **`Do Not Email` is the inverse of Counterpoint's `INCLUDE_IN_MARKETING_MAILOUTS`**, not from
-  Klaviyo. Klaviyo's unsubscribe list gets imported separately into the app's own suppression list
-  (one-time, from your existing monthly Klaviyo export) — this column just keeps Counterpoint's own
-  opt-in status in sync going forward.
+- **`Do Not Email` = 1 when `INCLUDE_IN_MARKETING_MAILOUTS = 'Y'`** (see the inversion note above —
+  `Y` means opted out, not opted in). This is independent of Klaviyo. Klaviyo's unsubscribe list
+  gets imported separately into the app's own suppression list (one-time, from your existing
+  monthly Klaviyo export) — this column just keeps Counterpoint's own opt-out status in sync going
+  forward.
 - **Phone** prefers the mobile number (`MBL_PHONE_1`) and falls back to the landline (`PHONE_1`)
   if there's no mobile number on file.
 - Rows with no email address are excluded entirely — no point exporting customers we can't email.
@@ -60,7 +68,7 @@ SELECT
     c.NAM                                                                  AS [Business Name],
     c.EMAIL_ADRS_1                                                         AS [Email],
     COALESCE(NULLIF(c.MBL_PHONE_1, ''), c.PHONE_1)                         AS [Phone],
-    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 0 ELSE 1 END      AS [Do Not Email],
+    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 1 ELSE 0 END      AS [Do Not Email],
     c.LST_SAL_DAT                                                          AS [Last Sale Date]
 FROM AR_CUST c
 WHERE c.EMAIL_ADRS_1 IS NOT NULL
