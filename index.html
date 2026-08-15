@@ -118,6 +118,62 @@
     overflow: auto;
     white-space: pre-wrap;
   }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    border: none;
+    border-radius: 0;
+    background: none;
+    padding: 10px 16px;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+  }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .segment-list { list-style: none; margin-top: 14px; }
+  .segment-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .segment-list li:last-child { border-bottom: none; }
+  .segment-list .count { font-weight: 700; }
+
+  .template-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .template-row:last-child { border-bottom: none; }
+  .template-row .name { font-weight: 600; font-size: 14px; }
+  .template-row .subject { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .template-row .actions { display: flex; gap: 8px; }
+
+  label.field { display: block; margin-top: 12px; font-size: 13px; font-weight: 600; }
+  input[type="text"], textarea {
+    font: inherit;
+    width: 100%;
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  textarea { min-height: 160px; font-family: ui-monospace, monospace; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -136,25 +192,82 @@
   </div>
 
   <div id="unlockedPanel" style="display:none;">
-    <div class="card">
-      <h2>Counterpoint data sync</h2>
-      <p>Pulls <code>customers.csv</code> and <code>sales_export.csv</code> from Dropbox through the
-      same pipeline as the Reports app, so we can confirm data access is wired up correctly before
-      building segments and campaigns on top of it.</p>
-      <div class="row" style="margin-top:14px; gap:10px;">
-        <button class="primary" id="syncButton">Sync from Dropbox</button>
-      </div>
-      <div class="stat-grid" id="statGrid" style="display:none;">
-        <div class="stat"><div class="value" id="statCustomers">–</div><div class="label">Customer rows</div></div>
-        <div class="stat"><div class="value" id="statSales">–</div><div class="label">Sales export rows</div></div>
-      </div>
-      <pre class="log" id="syncLog" style="display:none; margin-top:14px;"></pre>
+    <div class="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="segments">Segments</button>
+      <button class="tab" data-tab="templates">Templates</button>
     </div>
 
-    <div class="card">
-      <h2>Coming next</h2>
-      <p>Subscribers, segments, templates, and campaigns are the next build phases &mdash; this
-      foundation just proves the Counterpoint &rarr; Dropbox &rarr; app data path works end to end.</p>
+    <div class="tab-panel active" id="panel-dashboard">
+      <div class="card">
+        <h2>Counterpoint data sync</h2>
+        <p>Pulls <code>customers.csv</code> and <code>sales_export.csv</code> from Dropbox through the
+        same pipeline as the Reports app, so we can confirm data access is wired up correctly.</p>
+        <div class="row" style="margin-top:14px; gap:10px;">
+          <button class="primary" id="syncButton">Sync from Dropbox (test)</button>
+        </div>
+        <div class="stat-grid" id="statGrid" style="display:none;">
+          <div class="stat"><div class="value" id="statCustomers">–</div><div class="label">Customer rows</div></div>
+          <div class="stat"><div class="value" id="statSales">–</div><div class="label">Sales export rows</div></div>
+        </div>
+        <pre class="log" id="syncLog" style="display:none; margin-top:14px;"></pre>
+      </div>
+
+      <div class="card">
+        <h2>Sync into subscriber list</h2>
+        <p>Writes <code>customers.csv</code> into the app's own <code>subscribers</code> collection
+        so campaigns can be sent server-side, independent of a browser tab. Runs automatically every
+        night at 2am too.</p>
+        <div class="row" style="margin-top:14px; gap:10px;">
+          <button class="primary" id="firestoreSyncButton">Sync into subscribers now</button>
+        </div>
+        <pre class="log" id="firestoreSyncLog" style="display:none; margin-top:14px;"></pre>
+      </div>
+
+      <div class="card">
+        <h2>Coming next</h2>
+        <p>Campaign builder and sending are the next build phases &mdash; segments and templates
+        below are ready to use once the subscriber sync above has run at least once.</p>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-segments">
+      <div class="card">
+        <h2>Built-in segments</h2>
+        <p>Computed live from the <code>subscribers</code> list. Brand/category-based segments (e.g.
+        "bought Sony") need sales history data that isn't synced server-side yet &mdash; those come
+        with the campaign builder.</p>
+        <div class="row" style="margin-top:10px;">
+          <button id="refreshSegmentsButton">Refresh counts</button>
+        </div>
+        <ul class="segment-list" id="segmentList"></ul>
+        <pre class="log" id="segmentLog" style="display:none; margin-top:14px;"></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-templates">
+      <div class="card">
+        <h2>Email templates</h2>
+        <p>Simple HTML templates with merge fields like <code>{{first_name}}</code>. Editable here
+        without a redeploy.</p>
+        <div class="row" style="margin-top:10px;">
+          <button class="primary" id="newTemplateButton">+ New template</button>
+        </div>
+        <div id="templateList" style="margin-top:14px;"></div>
+        <pre class="log" id="templateLog" style="display:none; margin-top:14px;"></pre>
+      </div>
+
+      <div class="card" id="templateEditorCard" style="display:none;">
+        <h2 id="templateEditorTitle">New template</h2>
+        <input type="hidden" id="templateEditorId">
+        <label class="field">Name<input type="text" id="templateEditorName" placeholder="e.g. Win-back 12mo"></label>
+        <label class="field">Subject line<input type="text" id="templateEditorSubject" placeholder="e.g. We miss you at The Camera Company"></label>
+        <label class="field">HTML body<textarea id="templateEditorHtml" placeholder="&lt;p&gt;Hi {{first_name}},&lt;/p&gt;"></textarea></label>
+        <div class="row" style="margin-top:14px; gap:10px;">
+          <button class="primary" id="templateEditorSave">Save template</button>
+          <button id="templateEditorCancel">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 </main>
@@ -305,6 +418,171 @@
       syncLog.textContent = "Sync failed: " + error.message;
     } finally {
       syncButton.disabled = false;
+    }
+  });
+
+  // --- Tabs ---
+  document.querySelectorAll(".tab").forEach((tabButton) => {
+    tabButton.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      tabButton.classList.add("active");
+      document.getElementById("panel-" + tabButton.dataset.tab).classList.add("active");
+      if (tabButton.dataset.tab === "segments") loadSegments();
+      if (tabButton.dataset.tab === "templates") loadTemplates();
+    });
+  });
+
+  // --- Cloud Functions helper ---
+  const FUNCTIONS_BASE = "https://us-central1-camera-company-accounts.cloudfunctions.net";
+
+  async function callFn(name, { method = "GET", body } = {}) {
+    const response = await fetch(FUNCTIONS_BASE + "/" + name, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-CC-Auth-Token": accountAuthToken,
+        "X-CC-Username": accountUser ? accountUser.username : "",
+        Authorization: "Bearer " + accountAuthToken,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || ("Request failed with status " + response.status));
+    return data;
+  }
+
+  // --- Firestore subscriber sync ---
+  const firestoreSyncButton = document.getElementById("firestoreSyncButton");
+  const firestoreSyncLog = document.getElementById("firestoreSyncLog");
+  firestoreSyncButton.addEventListener("click", async () => {
+    firestoreSyncButton.disabled = true;
+    firestoreSyncLog.style.display = "block";
+    firestoreSyncLog.textContent = "Syncing into subscribers…";
+    try {
+      const result = await callFn("syncEmailSubscribersNow");
+      firestoreSyncLog.textContent = "Synced " + result.written + " of " + result.totalRows +
+        " rows (" + result.skipped + " skipped - missing customer # or email) at " +
+        new Date().toLocaleTimeString() + ".";
+    } catch (error) {
+      firestoreSyncLog.textContent = "Sync failed: " + error.message;
+    } finally {
+      firestoreSyncButton.disabled = false;
+    }
+  });
+
+  // --- Segments ---
+  const segmentList = document.getElementById("segmentList");
+  const segmentLog = document.getElementById("segmentLog");
+  document.getElementById("refreshSegmentsButton").addEventListener("click", loadSegments);
+
+  async function loadSegments() {
+    segmentLog.style.display = "block";
+    segmentLog.textContent = "Loading…";
+    segmentList.innerHTML = "";
+    try {
+      const { segments } = await callFn("getEmailSegmentCounts");
+      segmentList.innerHTML = segments.map((s) =>
+        "<li><span>" + escapeHtml(s.label) + "</span><span class=\"count\">" +
+        s.count.toLocaleString() + "</span></li>"
+      ).join("");
+      segmentLog.style.display = "none";
+    } catch (error) {
+      segmentLog.textContent = "Could not load segments: " + error.message;
+    }
+  }
+
+  // --- Templates ---
+  const templateList = document.getElementById("templateList");
+  const templateLog = document.getElementById("templateLog");
+  const templateEditorCard = document.getElementById("templateEditorCard");
+  const templateEditorTitle = document.getElementById("templateEditorTitle");
+  const templateEditorId = document.getElementById("templateEditorId");
+  const templateEditorName = document.getElementById("templateEditorName");
+  const templateEditorSubject = document.getElementById("templateEditorSubject");
+  const templateEditorHtml = document.getElementById("templateEditorHtml");
+  let cachedTemplates = [];
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function loadTemplates() {
+    templateLog.style.display = "block";
+    templateLog.textContent = "Loading…";
+    templateList.innerHTML = "";
+    try {
+      const { templates } = await callFn("listEmailTemplates");
+      cachedTemplates = templates;
+      if (!templates.length) {
+        templateList.innerHTML = "<p style=\"color:var(--text-muted); font-size:14px;\">No templates yet.</p>";
+      } else {
+        templateList.innerHTML = templates.map((t) =>
+          "<div class=\"template-row\">" +
+            "<div><div class=\"name\">" + escapeHtml(t.name) + "</div>" +
+            "<div class=\"subject\">" + escapeHtml(t.subject) + "</div></div>" +
+            "<div class=\"actions\">" +
+              "<button onclick=\"editTemplate('" + t.id + "')\">Edit</button>" +
+              "<button onclick=\"deleteTemplate('" + t.id + "')\">Delete</button>" +
+            "</div>" +
+          "</div>"
+        ).join("");
+      }
+      templateLog.style.display = "none";
+    } catch (error) {
+      templateLog.textContent = "Could not load templates: " + error.message;
+    }
+  }
+
+  function openTemplateEditor(template) {
+    templateEditorTitle.textContent = template ? "Edit template" : "New template";
+    templateEditorId.value = template ? template.id : "";
+    templateEditorName.value = template ? template.name : "";
+    templateEditorSubject.value = template ? template.subject : "";
+    templateEditorHtml.value = template ? template.html : "";
+    templateEditorCard.style.display = "block";
+    templateEditorCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  window.editTemplate = function (id) {
+    const template = cachedTemplates.find((t) => t.id === id);
+    if (template) openTemplateEditor(template);
+  };
+
+  window.deleteTemplate = async function (id) {
+    const template = cachedTemplates.find((t) => t.id === id);
+    if (!confirm("Delete template \"" + (template ? template.name : id) + "\"?")) return;
+    try {
+      await callFn("deleteEmailTemplate", { method: "POST", body: { id } });
+      loadTemplates();
+    } catch (error) {
+      alert("Could not delete template: " + error.message);
+    }
+  };
+
+  document.getElementById("newTemplateButton").addEventListener("click", () => openTemplateEditor(null));
+  document.getElementById("templateEditorCancel").addEventListener("click", () => {
+    templateEditorCard.style.display = "none";
+  });
+  document.getElementById("templateEditorSave").addEventListener("click", async () => {
+    const name = templateEditorName.value.trim();
+    const subject = templateEditorSubject.value.trim();
+    const html = templateEditorHtml.value;
+    if (!name || !subject || !html.trim()) {
+      alert("Please fill in name, subject, and HTML body.");
+      return;
+    }
+    try {
+      await callFn("saveEmailTemplate", {
+        method: "POST",
+        body: { id: templateEditorId.value || undefined, name, subject, html },
+      });
+      templateEditorCard.style.display = "none";
+      loadTemplates();
+    } catch (error) {
+      alert("Could not save template: " + error.message);
     }
   });
 </script>
