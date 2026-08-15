@@ -4,43 +4,47 @@ This mirrors how `special_orders.csv` was added: a new SQL block written to a CS
 the same Dropbox sync folder the other exports already use
 (`C:\Users\Administrator\Dropbox\Sales Tracking\Access Sales and Inventory Reporting\`).
 
-**Before wiring this in**, run a quick sanity check in SSMS to confirm these `CM_CUST` column
-names match your actual schema (Counterpoint installs vary slightly by version):
-
-```sql
-SELECT TOP 5 CUST_NO, FST_NAM, LST_NAM, CUST_NAM, EMAIL_ADRS_1, PHONE_1, NO_EMAIL, LST_SAL_DAT
-FROM CM_CUST;
-```
-
-If any of those columns error out, tell me what SSMS says is actually in `CM_CUST` (or run
-`sp_columns CM_CUST`) and I'll adjust the query below.
+Verified against the real schema 2026-08-15: the customer table is `AR_CUST` (not `CM_CUST`),
+business name is `NAM` (not `CUST_NAM`), and there's no simple `NO_EMAIL` flag — instead there's
+an actual marketing opt-in field, `INCLUDE_IN_MARKETING_MAILOUTS` (confirmed `Y`/`N` values only,
+29,185 Y / 17,003 N among customers with an email on file).
 
 ## Query
 
 ```sql
 SELECT
-    c.CUST_NO                                              AS [Customer #],
+    c.CUST_NO                                                              AS [Customer #],
     LTRIM(RTRIM(COALESCE(c.FST_NAM, '') + ' ' + COALESCE(c.LST_NAM, ''))) AS [Name],
-    c.CUST_NAM                                             AS [Business Name],
-    c.EMAIL_ADRS_1                                         AS [Email],
-    c.PHONE_1                                               AS [Phone],
-    CASE WHEN c.NO_EMAIL = 'Y' THEN 1 ELSE 0 END            AS [Do Not Email],
-    c.LST_SAL_DAT                                           AS [Last Sale Date]
-FROM CM_CUST c
+    c.NAM                                                                  AS [Business Name],
+    c.EMAIL_ADRS_1                                                         AS [Email],
+    COALESCE(NULLIF(c.MBL_PHONE_1, ''), c.PHONE_1)                         AS [Phone],
+    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 0 ELSE 1 END      AS [Do Not Email],
+    c.LST_SAL_DAT                                                          AS [Last Sale Date]
+FROM AR_CUST c
 WHERE c.EMAIL_ADRS_1 IS NOT NULL
   AND c.EMAIL_ADRS_1 <> ''
 ORDER BY c.CUST_NO;
 ```
 
-Notes / decisions baked into this draft — flag if any of these are wrong:
+Notes / decisions baked into this:
 - **Company-wide, not just WEST location** — customer records aren't per-location like sales
   lines are, so this pulls every customer with an email on file regardless of which store they
   shop at. Let me know if that's not what you want.
-- **`Do Not Email` comes from Counterpoint's own `NO_EMAIL` flag**, not from Klaviyo. Klaviyo's
-  unsubscribe list gets imported separately into the app's own suppression list (one-time, from
-  your existing monthly Klaviyo export) — this flag just keeps Counterpoint's own opt-outs in
-  sync going forward.
+- **`Do Not Email` is the inverse of Counterpoint's `INCLUDE_IN_MARKETING_MAILOUTS`**, not from
+  Klaviyo. Klaviyo's unsubscribe list gets imported separately into the app's own suppression list
+  (one-time, from your existing monthly Klaviyo export) — this column just keeps Counterpoint's own
+  opt-in status in sync going forward.
+- **Phone** prefers the mobile number (`MBL_PHONE_1`) and falls back to the landline (`PHONE_1`)
+  if there's no mobile number on file.
 - Rows with no email address are excluded entirely — no point exporting customers we can't email.
+- `AR_CUST` also has `USER_KlaviyoId` / `USER_Klaviyo_Commit` columns from a prior Klaviyo
+  integration — not used here, but worth knowing about if we ever want to match suppression
+  records by Klaviyo ID instead of just email.
+
+The CSV column headers above (`Customer #`, `Name`, `Business Name`, `Email`, `Phone`,
+`Do Not Email`, `Last Sale Date`) match exactly what the nightly sync Cloud Function
+(`camera-company-accounts-functions/functions/index.js`) already expects — no code changes needed
+there once this is wired in.
 
 ## PowerShell block to add to `TRCGCSVExport.ps1`
 
@@ -51,14 +55,14 @@ script uses a different pattern for the SQL connection / Dropbox path than shown
 # --- Customers export (added for Camera Company Email) ---
 $customersQuery = @"
 SELECT
-    c.CUST_NO                                              AS [Customer #],
+    c.CUST_NO                                                              AS [Customer #],
     LTRIM(RTRIM(COALESCE(c.FST_NAM, '') + ' ' + COALESCE(c.LST_NAM, ''))) AS [Name],
-    c.CUST_NAM                                             AS [Business Name],
-    c.EMAIL_ADRS_1                                         AS [Email],
-    c.PHONE_1                                               AS [Phone],
-    CASE WHEN c.NO_EMAIL = 'Y' THEN 1 ELSE 0 END            AS [Do Not Email],
-    c.LST_SAL_DAT                                           AS [Last Sale Date]
-FROM CM_CUST c
+    c.NAM                                                                  AS [Business Name],
+    c.EMAIL_ADRS_1                                                         AS [Email],
+    COALESCE(NULLIF(c.MBL_PHONE_1, ''), c.PHONE_1)                         AS [Phone],
+    CASE WHEN c.INCLUDE_IN_MARKETING_MAILOUTS = 'Y' THEN 0 ELSE 1 END      AS [Do Not Email],
+    c.LST_SAL_DAT                                                          AS [Last Sale Date]
+FROM AR_CUST c
 WHERE c.EMAIL_ADRS_1 IS NOT NULL
   AND c.EMAIL_ADRS_1 <> ''
 ORDER BY c.CUST_NO;
@@ -80,4 +84,4 @@ to match it exactly, so wire this block in next to the `special_orders.csv` one 
 connection variables.
 
 Once this runs once and `customers.csv` shows up in the Dropbox folder, the app's "Sync from
-Dropbox" button will be able to pull it in.
+Dropbox" button (and the nightly Cloud Function) will be able to pull it in.
